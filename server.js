@@ -52,11 +52,13 @@ function broadcast(message, excludedSocket = null) {
 function publicPlayer(player) {
   return {
     id: player.id,
+    username: player.username,
     x: player.x,
     y: player.y,
     health: player.health,
     damage: player.damage,
     reload: player.reload,
+    hotbar: player.hotbar,
   };
 }
 
@@ -162,6 +164,7 @@ function applyAction(player, message) {
 webSocketServer.on('connection', (socket) => {
   const player = {
     id: randomUUID(),
+    username: 'Guest',
     x: 1600,
     y: 1600,
     health: 0,
@@ -171,6 +174,7 @@ webSocketServer.on('connection', (socket) => {
     inventory: [],
     hotbar: Array(10).fill(null),
     secondaryHotbar: Array(10).fill(null),
+    started: false,
   };
   PETAL_RARITIES.forEach((rarity, index) => {
     const petal = createPetal('basic', rarity.id);
@@ -179,14 +183,6 @@ webSocketServer.on('connection', (socket) => {
   });
   calculateStats(player);
   players.set(player.id, { player, socket });
-
-  send(socket, {
-    type: 'welcome',
-    playerId: player.id,
-    players: [...players.values()].map(({ player: currentPlayer }) => publicPlayer(currentPlayer)),
-  });
-  sendState({ player, socket });
-  broadcast({ type: 'playerJoined', player: publicPlayer(player) }, socket);
 
   socket.on('message', (rawMessage) => {
     let message;
@@ -199,6 +195,24 @@ webSocketServer.on('connection', (socket) => {
 
     const current = players.get(player.id);
     if (!current || !message || typeof message.type !== 'string') return;
+
+    if (message.type === 'start') {
+      const requestedName = typeof message.username === 'string' ? message.username.trim() : '';
+      player.username = requestedName.replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 16) || 'Guest';
+      player.started = true;
+      send(socket, {
+        type: 'welcome',
+        playerId: player.id,
+        players: [...players.values()]
+          .filter(({ player: currentPlayer }) => currentPlayer.started)
+          .map(({ player: currentPlayer }) => publicPlayer(currentPlayer)),
+      });
+      sendState(current);
+      broadcast({ type: 'playerJoined', player: publicPlayer(player) }, socket);
+      return;
+    }
+
+    if (!player.started) return;
 
     if (message.type === 'input') {
       const inputX = Number(message.x);
@@ -224,6 +238,7 @@ webSocketServer.on('connection', (socket) => {
 setInterval(() => {
   const deltaTime = 1 / TICK_RATE;
   players.forEach(({ player }) => {
+    if (!player.started) return;
     player.x += player.input.x * PLAYER_SPEED * deltaTime;
     player.y += player.input.y * PLAYER_SPEED * deltaTime;
     player.x = Math.max(WORLD.border + PLAYER_RADIUS, Math.min(WORLD.width - WORLD.border - PLAYER_RADIUS, player.x));
