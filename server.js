@@ -71,6 +71,9 @@ function publicPlayer(player) {
     reload: player.reload,
     hotbar: player.hotbar,
     petalHealth: player.petalHealth,
+    petalReloads: player.petalReloads,
+    secondaryPetalHealth: player.secondaryPetalHealth,
+    secondaryPetalReloads: player.secondaryPetalReloads,
     expandHeld: player.expandHeld,
     retractHeld: player.retractHeld,
     orbitRadius: player.orbitRadius,
@@ -117,10 +120,15 @@ function getHealthBar(player, barName) {
   return barName === 'secondary-hotbar' ? player.secondaryPetalHealth : player.petalHealth;
 }
 
+function getReloadBar(player, barName) {
+  return barName === 'secondary-hotbar' ? player.secondaryPetalReloads : player.petalReloads;
+}
+
 function setPetalHealth(player, barName, slot, petal) {
   const healthBar = getHealthBar(player, barName);
   const stats = petal ? getPetalStats(petal) : null;
   healthBar[slot] = stats ? stats.health : 0;
+  getReloadBar(player, barName)[slot] = 0;
 }
 
 function equipNextAvailable(player, inventoryIndex) {
@@ -172,6 +180,10 @@ function applyAction(player, message) {
       player.secondaryPetalHealth[slot],
       player.petalHealth[slot],
     ];
+    [player.petalReloads[slot], player.secondaryPetalReloads[slot]] = [
+      player.secondaryPetalReloads[slot],
+      player.petalReloads[slot],
+    ];
   }
 
   if (message.action === 'equip') {
@@ -196,6 +208,7 @@ function applyAction(player, message) {
     addToInventory(player, source[sourceSlot]);
     source[sourceSlot] = null;
     getHealthBar(player, sourceBar)[sourceSlot] = 0;
+    getReloadBar(player, sourceBar)[sourceSlot] = 0;
   }
 
   if (message.action === 'swapSlots') {
@@ -210,6 +223,9 @@ function applyAction(player, message) {
     const sourceHealth = getHealthBar(player, sourceBar);
     const targetHealth = getHealthBar(player, targetBar);
     [sourceHealth[sourceSlot], targetHealth[targetSlot]] = [targetHealth[targetSlot], sourceHealth[sourceSlot]];
+    const sourceReloads = getReloadBar(player, sourceBar);
+    const targetReloads = getReloadBar(player, targetBar);
+    [sourceReloads[sourceSlot], targetReloads[targetSlot]] = [targetReloads[targetSlot], sourceReloads[sourceSlot]];
   }
 
   calculateStats(player);
@@ -227,9 +243,24 @@ function applyDamage(target, amount) {
 function restorePetalHealth(player) {
   player.hotbar.forEach((petal, index) => {
     player.petalHealth[index] = petal ? getPetalStats(petal).health : 0;
+    player.petalReloads[index] = 0;
   });
   player.secondaryHotbar.forEach((petal, index) => {
     player.secondaryPetalHealth[index] = petal ? getPetalStats(petal).health : 0;
+    player.secondaryPetalReloads[index] = 0;
+  });
+}
+
+function updatePetalReloads(player, deltaTime) {
+  [
+    [player.hotbar, player.petalHealth, player.petalReloads],
+    [player.secondaryHotbar, player.secondaryPetalHealth, player.secondaryPetalReloads],
+  ].forEach(([bar, healthBar, reloadBar]) => {
+    bar.forEach((petal, slot) => {
+      if (!petal || reloadBar[slot] <= 0) return;
+      reloadBar[slot] = Math.max(0, reloadBar[slot] - deltaTime);
+      if (reloadBar[slot] === 0) healthBar[slot] = getPetalStats(petal).health;
+    });
   });
 }
 
@@ -298,6 +329,7 @@ function resolveCombat(activePlayers, deltaTime) {
         if (attacker.petalHitCooldowns.has(cooldownKey)) return;
         applyDamage(target, petalStats.damage);
         attacker.petalHealth[slot] = Math.max(0, attacker.petalHealth[slot] - target.bodyDamage);
+        if (attacker.petalHealth[slot] === 0) attacker.petalReloads[slot] = petalStats.reload;
         attacker.petalHitCooldowns.set(cooldownKey, PETAL_HIT_COOLDOWN);
       });
     });
@@ -323,6 +355,8 @@ webSocketServer.on('connection', (socket) => {
     secondaryHotbar: Array(10).fill(null),
     petalHealth: Array(10).fill(0),
     secondaryPetalHealth: Array(10).fill(0),
+    petalReloads: Array(10).fill(0),
+    secondaryPetalReloads: Array(10).fill(0),
     petalHitCooldowns: new Map(),
     bodyHitCooldowns: new Map(),
     expandHeld: false,
@@ -420,6 +454,7 @@ setInterval(() => {
   const activePlayers = [];
   players.forEach(({ player }) => {
     if (!player.started) return;
+    updatePetalReloads(player, deltaTime);
     if (player.health <= 0) return;
     const targetVelocityX = player.input.x * PLAYER_SPEED;
     const targetVelocityY = player.input.y * PLAYER_SPEED;
