@@ -73,7 +73,7 @@ function createMob(id, typeId, rarityId, x, y) {
   };
 }
 
-mobs.set('rock-mythical-1', createMob(1, 1, 'mythical', WORLD.spawnX, WORLD.spawnY));
+mobs.set('rock-common-1', createMob(1, 1, 'common', WORLD.spawnX + 260, WORLD.spawnY));
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
