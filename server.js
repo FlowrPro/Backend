@@ -39,7 +39,7 @@ const MOB_RARITIES = [
   { id: 'ultra', label: 'Ultra', color: '#f5df66', multiplier: 145800, sizeMultiplier: 11.390625 },
 ];
 const MOB_TYPES = {
-  1: { id: 1, label: 'Rock', baseHealth: 100, baseDamage: 10, baseSize: 100, image: 'Rock.png' },
+  1: { id: 1, label: 'Rock', baseHealth: 100, baseDamage: 10, baseSize: 100 },
 };
 const rarityById = new Map(PETAL_RARITIES.map((rarity) => [rarity.id, rarity]));
 const mobRarityById = new Map(MOB_RARITIES.map((rarity) => [rarity.id, rarity]));
@@ -68,7 +68,7 @@ function createMob(id, typeId, rarityId, x, y) {
     maxHealth: stats.health,
     damage: stats.damage,
     size: stats.size,
-    collisionRadius: stats.baseSize / 2,
+    collisionRadius: stats.size / 2,
     hitCooldowns: new Map(),
   };
 }
