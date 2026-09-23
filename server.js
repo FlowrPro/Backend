@@ -126,11 +126,21 @@ function getReloadBar(player, barName) {
   return barName === 'secondary-hotbar' ? player.secondaryPetalReloads : player.petalReloads;
 }
 
-function setPetalHealth(player, barName, slot, petal) {
+function setPetalHealth(player, barName, slot, petal, startReload = false) {
   const healthBar = getHealthBar(player, barName);
   const stats = petal ? getPetalStats(petal) : null;
-  healthBar[slot] = stats ? stats.health : 0;
-  getReloadBar(player, barName)[slot] = 0;
+  healthBar[slot] = stats && !startReload ? stats.health : 0;
+  getReloadBar(player, barName)[slot] = stats && startReload ? stats.reload : 0;
+}
+
+function startPetalReload(player, barName, slot) {
+  const petal = getHealthBar(player, barName) && (barName === 'secondary-hotbar'
+    ? player.secondaryHotbar[slot]
+    : player.hotbar[slot]);
+  const stats = petal ? getPetalStats(petal) : null;
+  if (!stats) return;
+  getHealthBar(player, barName)[slot] = 0;
+  getReloadBar(player, barName)[slot] = stats.reload;
 }
 
 function equipNextAvailable(player, inventoryIndex) {
@@ -146,7 +156,7 @@ function equipNextAvailable(player, inventoryIndex) {
   if (!stack.count) player.inventory.splice(inventoryIndex, 1);
   const target = targetBar === 'hotbar' ? player.hotbar : player.secondaryHotbar;
   target[resolvedSlot] = petal;
-  setPetalHealth(player, targetBar, resolvedSlot, petal);
+  setPetalHealth(player, targetBar, resolvedSlot, petal, targetBar === 'hotbar');
   calculateStats(player);
   return { targetBar, targetSlot: resolvedSlot };
 }
@@ -203,6 +213,8 @@ function applyAction(player, message) {
       player.secondaryPetalReloads[slot],
       player.petalReloads[slot],
     ];
+    startPetalReload(player, 'hotbar', slot);
+    startPetalReload(player, 'secondary-hotbar', slot);
   }
 
   if (message.action === 'equip') {
@@ -216,7 +228,8 @@ function applyAction(player, message) {
     stack.count -= 1;
     if (!stack.count) player.inventory.splice(inventoryIndex, 1);
     targetBar[targetSlot] = petal;
-    setPetalHealth(player, message.targetBar === 'secondary-hotbar' ? 'secondary-hotbar' : 'hotbar', targetSlot, petal);
+    const resolvedBar = message.targetBar === 'secondary-hotbar' ? 'secondary-hotbar' : 'hotbar';
+    setPetalHealth(player, resolvedBar, targetSlot, petal, resolvedBar === 'hotbar');
   }
 
   if (message.action === 'store') {
@@ -245,6 +258,10 @@ function applyAction(player, message) {
     const sourceReloads = getReloadBar(player, sourceBar);
     const targetReloads = getReloadBar(player, targetBar);
     [sourceReloads[sourceSlot], targetReloads[targetSlot]] = [targetReloads[targetSlot], sourceReloads[sourceSlot]];
+    if (sourceBar !== targetBar) {
+      startPetalReload(player, sourceBar, sourceSlot);
+      startPetalReload(player, targetBar, targetSlot);
+    }
   }
 
   calculateStats(player);
