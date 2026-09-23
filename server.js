@@ -204,7 +204,6 @@ function distanceBetween(first, second) {
 function applyDamage(target, amount) {
   if (target.health <= 0) return;
   target.health = Math.max(0, target.health - amount);
-  if (target.health === 0) target.respawnAt = Date.now() + 3000;
 }
 
 function restorePetalHealth(player) {
@@ -222,7 +221,6 @@ function respawnPlayer(player) {
   player.velocityX = 0;
   player.velocityY = 0;
   player.health = player.maxHealth;
-  player.respawnAt = 0;
   player.petalHitCooldowns.clear();
   player.bodyHitCooldowns.clear();
   restorePetalHealth(player);
@@ -312,7 +310,6 @@ webSocketServer.on('connection', (socket) => {
     expandHeld: false,
     retractHeld: false,
     orbitRadius: 86,
-    respawnAt: 0,
     started: false,
   };
   PETAL_RARITIES.forEach((rarity, index) => {
@@ -369,6 +366,13 @@ webSocketServer.on('connection', (socket) => {
     }
 
     if (message.type === 'action') {
+      if (message.action === 'respawn') {
+        if (player.health <= 0) {
+          respawnPlayer(player);
+          sendState(current);
+        }
+        return;
+      }
       applyAction(player, message);
       sendState(current);
     }
@@ -392,10 +396,7 @@ setInterval(() => {
   const activePlayers = [];
   players.forEach(({ player }) => {
     if (!player.started) return;
-    if (player.health <= 0) {
-      if (player.respawnAt && Date.now() >= player.respawnAt) respawnPlayer(player);
-      else return;
-    }
+    if (player.health <= 0) return;
     const targetVelocityX = player.input.x * PLAYER_SPEED;
     const targetVelocityY = player.input.y * PLAYER_SPEED;
     const velocityStep = (player.input.x || player.input.y ? MOVEMENT_ACCELERATION : MOVEMENT_DECELERATION) * deltaTime;
