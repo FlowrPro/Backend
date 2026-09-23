@@ -208,6 +208,8 @@ function applyAction(player, message) {
         player.secondaryPetalReloads[slot],
         player.petalReloads[slot],
       ];
+      setPetalActivity(player, 'hotbar', slot);
+      setPetalActivity(player, 'secondary-hotbar', slot);
     }
   }
 
