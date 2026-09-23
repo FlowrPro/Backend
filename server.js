@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws';
 const port = Number(process.env.PORT) || 3000;
 const players = new Map();
 const mobs = new Map();
-const WORLD = { width: 3200, height: 3200, border: 260 };
+const WORLD = { width: 3200, height: 3200, spawnX: 1600, spawnY: 1600, border: 260 };
 const PLAYER_RADIUS = 31;
 const PETAL_RADIUS = 21;
 const BASE_PLAYER_HEALTH = 100;
@@ -73,7 +73,7 @@ function createMob(id, typeId, rarityId, x, y) {
   };
 }
 
-mobs.set('rock-mythical-1', createMob(1, 1, 'mythical', WORLD.width - WORLD.border - 100, WORLD.spawnY));
+mobs.set('rock-mythical-1', createMob(1, 1, 'mythical', WORLD.spawnX, WORLD.spawnY));
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
