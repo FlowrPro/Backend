@@ -64,6 +64,8 @@ function publicPlayer(player) {
     x: player.x,
     y: player.y,
     radius: PLAYER_RADIUS,
+    velocityX: player.velocityX,
+    velocityY: player.velocityY,
     health: player.health,
     maxHealth: player.maxHealth,
     bodyDamage: player.bodyDamage,
