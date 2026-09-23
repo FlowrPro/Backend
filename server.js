@@ -123,6 +123,24 @@ function setPetalHealth(player, barName, slot, petal) {
   healthBar[slot] = stats ? stats.health : 0;
 }
 
+function equipNextAvailable(player, inventoryIndex) {
+  const stack = player.inventory[inventoryIndex];
+  if (!stack) return null;
+  const targetSlot = player.hotbar.findIndex((petal) => !petal);
+  const targetBar = targetSlot >= 0 ? 'hotbar' : 'secondary-hotbar';
+  const resolvedSlot = targetSlot >= 0 ? targetSlot : player.secondaryHotbar.findIndex((petal) => !petal);
+  if (resolvedSlot < 0) return null;
+  const petal = createPetal(stack.petalId, stack.rarityId);
+  if (!getPetalStats(petal)) return null;
+  stack.count -= 1;
+  if (!stack.count) player.inventory.splice(inventoryIndex, 1);
+  const target = targetBar === 'hotbar' ? player.hotbar : player.secondaryHotbar;
+  target[resolvedSlot] = petal;
+  setPetalHealth(player, targetBar, resolvedSlot, petal);
+  calculateStats(player);
+  return { targetBar, targetSlot: resolvedSlot };
+}
+
 function publicState(player) {
   return {
     player: publicPlayer(player),
@@ -371,6 +389,12 @@ webSocketServer.on('connection', (socket) => {
           respawnPlayer(player);
           sendState(current);
         }
+        return;
+      }
+      if (message.action === 'equipNext') {
+        const result = equipNextAvailable(player, Number(message.inventoryIndex));
+        if (result) send(socket, { type: 'petalEquipped', ...result });
+        sendState(current);
         return;
       }
       applyAction(player, message);
