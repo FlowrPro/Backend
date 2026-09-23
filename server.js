@@ -143,6 +143,19 @@ function startPetalReload(player, barName, slot) {
   getReloadBar(player, barName)[slot] = stats.reload;
 }
 
+function setPetalActivity(player, barName, slot) {
+  const bar = barName === 'secondary-hotbar' ? player.secondaryHotbar : player.hotbar;
+  const petal = bar[slot];
+  const stats = petal ? getPetalStats(petal) : null;
+  if (!stats) {
+    getHealthBar(player, barName)[slot] = 0;
+    getReloadBar(player, barName)[slot] = 0;
+    return;
+  }
+  if (barName === 'hotbar') startPetalReload(player, barName, slot);
+  else setPetalHealth(player, barName, slot, petal);
+}
+
 function equipNextAvailable(player, inventoryIndex) {
   const stack = player.inventory[inventoryIndex];
   if (!stack) return null;
@@ -213,8 +226,8 @@ function applyAction(player, message) {
       player.secondaryPetalReloads[slot],
       player.petalReloads[slot],
     ];
-    startPetalReload(player, 'hotbar', slot);
-    startPetalReload(player, 'secondary-hotbar', slot);
+    setPetalActivity(player, 'hotbar', slot);
+    setPetalActivity(player, 'secondary-hotbar', slot);
   }
 
   if (message.action === 'equip') {
@@ -259,8 +272,8 @@ function applyAction(player, message) {
     const targetReloads = getReloadBar(player, targetBar);
     [sourceReloads[sourceSlot], targetReloads[targetSlot]] = [targetReloads[targetSlot], sourceReloads[sourceSlot]];
     if (sourceBar !== targetBar) {
-      startPetalReload(player, sourceBar, sourceSlot);
-      startPetalReload(player, targetBar, targetSlot);
+      setPetalActivity(player, sourceBar, sourceSlot);
+      setPetalActivity(player, targetBar, targetSlot);
     }
   }
 
@@ -504,9 +517,10 @@ setInterval(() => {
     activePlayers.push(player);
   });
   resolveCombat(activePlayers, deltaTime);
-  players.forEach(({ player }) => {
-    if (player.started) broadcast({ type: 'playerUpdated', player: publicPlayer(player) });
-  });
+  const publicPlayers = [...players.values()]
+    .filter(({ player }) => player.started)
+    .map(({ player }) => publicPlayer(player));
+  if (publicPlayers.length) broadcast({ type: 'playersUpdated', players: publicPlayers });
 }, 1000 / TICK_RATE);
 
 server.listen(port, '0.0.0.0', () => {
