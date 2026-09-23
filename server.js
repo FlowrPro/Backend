@@ -7,6 +7,8 @@ const players = new Map();
 const WORLD = { width: 3200, height: 3200, border: 260 };
 const PLAYER_RADIUS = 31;
 const PLAYER_SPEED = 310;
+const MOVEMENT_ACCELERATION = 1700;
+const MOVEMENT_DECELERATION = 2100;
 const TICK_RATE = 20;
 const PETAL_RARITIES = [
   { id: 'common', label: 'Common', color: '#9ea4ad', multiplier: 1 },
@@ -171,6 +173,8 @@ webSocketServer.on('connection', (socket) => {
     damage: 0,
     reload: 1.2,
     input: { x: 0, y: 0 },
+    velocityX: 0,
+    velocityY: 0,
     inventory: [],
     hotbar: Array(10).fill(null),
     secondaryHotbar: Array(10).fill(null),
@@ -227,6 +231,13 @@ webSocketServer.on('connection', (socket) => {
       applyAction(player, message);
       sendState(current);
     }
+
+    if (message.type === 'chat') {
+      if (typeof message.text !== 'string') return;
+      const text = message.text.trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 180);
+      if (!text) return;
+      broadcast({ type: 'chat', username: player.username, text });
+    }
   });
 
   socket.on('close', () => {
@@ -239,8 +250,13 @@ setInterval(() => {
   const deltaTime = 1 / TICK_RATE;
   players.forEach(({ player }) => {
     if (!player.started) return;
-    player.x += player.input.x * PLAYER_SPEED * deltaTime;
-    player.y += player.input.y * PLAYER_SPEED * deltaTime;
+    const targetVelocityX = player.input.x * PLAYER_SPEED;
+    const targetVelocityY = player.input.y * PLAYER_SPEED;
+    const velocityStep = (player.input.x || player.input.y ? MOVEMENT_ACCELERATION : MOVEMENT_DECELERATION) * deltaTime;
+    player.velocityX += Math.max(-velocityStep, Math.min(velocityStep, targetVelocityX - player.velocityX));
+    player.velocityY += Math.max(-velocityStep, Math.min(velocityStep, targetVelocityY - player.velocityY));
+    player.x += player.velocityX * deltaTime;
+    player.y += player.velocityY * deltaTime;
     player.x = Math.max(WORLD.border + PLAYER_RADIUS, Math.min(WORLD.width - WORLD.border - PLAYER_RADIUS, player.x));
     player.y = Math.max(WORLD.border + PLAYER_RADIUS, Math.min(WORLD.height - WORLD.border - PLAYER_RADIUS, player.y));
     broadcast({ type: 'playerUpdated', player: publicPlayer(player) });
