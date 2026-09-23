@@ -31,12 +31,12 @@ const PETAL_TYPES = {
 };
 const MOB_RARITIES = [
   { id: 'common', label: 'Common', color: '#9ea4ad', multiplier: 1, sizeMultiplier: 1 },
-  { id: 'unusual', label: 'Unusual', color: '#55c878', multiplier: 3.75, sizeMultiplier: 3 },
-  { id: 'rare', label: 'Rare', color: '#55a9e8', multiplier: 13.5, sizeMultiplier: 9 },
-  { id: 'epic', label: 'Epic', color: '#bd67e8', multiplier: 54, sizeMultiplier: 27 },
-  { id: 'legendary', label: 'Legendary', color: '#f2a43c', multiplier: 324, sizeMultiplier: 81 },
-  { id: 'mythical', label: 'Mythical', color: '#ed5b75', multiplier: 3159, sizeMultiplier: 243 },
-  { id: 'ultra', label: 'Ultra', color: '#f5df66', multiplier: 145800, sizeMultiplier: 729 },
+  { id: 'unusual', label: 'Unusual', color: '#55c878', multiplier: 3.75, sizeMultiplier: 1.5 },
+  { id: 'rare', label: 'Rare', color: '#55a9e8', multiplier: 13.5, sizeMultiplier: 2.25 },
+  { id: 'epic', label: 'Epic', color: '#bd67e8', multiplier: 54, sizeMultiplier: 3.375 },
+  { id: 'legendary', label: 'Legendary', color: '#f2a43c', multiplier: 324, sizeMultiplier: 5.0625 },
+  { id: 'mythical', label: 'Mythical', color: '#ed5b75', multiplier: 3159, sizeMultiplier: 7.59375 },
+  { id: 'ultra', label: 'Ultra', color: '#f5df66', multiplier: 145800, sizeMultiplier: 11.390625 },
 ];
 const MOB_TYPES = {
   1: { id: 1, label: 'Rock', baseHealth: 100, baseDamage: 10, baseSize: 100, image: 'Rock.webp' },
@@ -73,7 +73,7 @@ function createMob(id, typeId, rarityId, x, y) {
   };
 }
 
-mobs.set('rock-common-1', createMob(1, 1, 'common', WORLD.spawnX + 260, WORLD.spawnY));
+mobs.set('rock-legendary-1', createMob(1, 1, 'legendary', WORLD.spawnX + 300, WORLD.spawnY));
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
