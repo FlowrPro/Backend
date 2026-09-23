@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
 
 const port = Number(process.env.PORT) || 3000;
 const players = new Map();
+const mobs = new Map();
 const WORLD = { width: 3200, height: 3200, border: 260 };
 const PLAYER_RADIUS = 31;
 const PETAL_RADIUS = 21;
@@ -26,9 +27,53 @@ const PETAL_RARITIES = [
   { id: 'ultra', label: 'Ultra', color: '#f5df66', multiplier: 729 },
 ];
 const PETAL_TYPES = {
-  basic: { id: 'basic', label: 'Basic', baseDamage: 10, baseHealth: 10, baseReload: 1.2 },
+  1: { id: 1, label: 'Basic', baseDamage: 10, baseHealth: 10, baseReload: 1.2 },
+};
+const MOB_RARITIES = [
+  { id: 'common', label: 'Common', color: '#9ea4ad', multiplier: 1, sizeMultiplier: 1 },
+  { id: 'unusual', label: 'Unusual', color: '#55c878', multiplier: 3.75, sizeMultiplier: 3 },
+  { id: 'rare', label: 'Rare', color: '#55a9e8', multiplier: 13.5, sizeMultiplier: 9 },
+  { id: 'epic', label: 'Epic', color: '#bd67e8', multiplier: 54, sizeMultiplier: 27 },
+  { id: 'legendary', label: 'Legendary', color: '#f2a43c', multiplier: 324, sizeMultiplier: 81 },
+  { id: 'mythical', label: 'Mythical', color: '#ed5b75', multiplier: 3159, sizeMultiplier: 243 },
+  { id: 'ultra', label: 'Ultra', color: '#f5df66', multiplier: 145800, sizeMultiplier: 729 },
+];
+const MOB_TYPES = {
+  1: { id: 1, label: 'Rock', baseHealth: 100, baseDamage: 10, baseSize: 100, image: 'Rock.webp' },
 };
 const rarityById = new Map(PETAL_RARITIES.map((rarity) => [rarity.id, rarity]));
+const mobRarityById = new Map(MOB_RARITIES.map((rarity) => [rarity.id, rarity]));
+
+function getMobStats(mob) {
+  const type = MOB_TYPES[mob.typeId];
+  const rarity = mobRarityById.get(mob.rarityId);
+  return {
+    ...type,
+    ...rarity,
+    health: type.baseHealth * rarity.multiplier,
+    damage: type.baseDamage * rarity.multiplier,
+    size: type.baseSize * rarity.sizeMultiplier,
+  };
+}
+
+function createMob(id, typeId, rarityId, x, y) {
+  const stats = getMobStats({ typeId, rarityId });
+  return {
+    id,
+    typeId,
+    rarityId,
+    x,
+    y,
+    health: stats.health,
+    maxHealth: stats.health,
+    damage: stats.damage,
+    size: stats.size,
+    collisionRadius: stats.baseSize / 2,
+    hitCooldowns: new Map(),
+  };
+}
+
+mobs.set('rock-mythical-1', createMob(1, 1, 'mythical', WORLD.width - WORLD.border - 100, WORLD.spawnY));
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -79,6 +124,21 @@ function publicPlayer(player) {
     expandHeld: player.expandHeld,
     retractHeld: player.retractHeld,
     orbitRadius: player.orbitRadius,
+  };
+}
+
+function publicMob(mob) {
+  return {
+    id: mob.id,
+    typeId: mob.typeId,
+    name: MOB_TYPES[mob.typeId].label,
+    rarityId: mob.rarityId,
+    x: mob.x,
+    y: mob.y,
+    health: mob.health,
+    maxHealth: mob.maxHealth,
+    damage: mob.damage,
+    size: mob.size,
   };
 }
 
@@ -182,6 +242,9 @@ function publicState(player) {
     secondaryHotbar: player.secondaryHotbar,
     petalRarities: PETAL_RARITIES,
     petalTypes: PETAL_TYPES,
+    mobRarities: MOB_RARITIES,
+    mobTypes: MOB_TYPES,
+    mobs: [...mobs.values()].map(publicMob),
   };
 }
 
@@ -387,6 +450,34 @@ function resolveCombat(activePlayers, deltaTime) {
   });
 }
 
+function resolveMobCombat(activePlayers, deltaTime) {
+  mobs.forEach((mob) => {
+    reduceCooldowns(mob.hitCooldowns, deltaTime);
+    if (mob.health <= 0) return;
+    activePlayers.forEach((player) => {
+      if (distanceBetween(player, mob) <= PLAYER_RADIUS + mob.collisionRadius
+        && !mob.hitCooldowns.has(player.id)) {
+        applyDamage(player, mob.damage);
+        mob.hitCooldowns.set(player.id, BODY_HIT_COOLDOWN);
+      }
+
+      const equipped = player.hotbar.filter((petal, slot) => petal && player.petalHealth[slot] > 0);
+      equipped.forEach((petal, petalIndex) => {
+        const slot = player.hotbar.indexOf(petal);
+        const petalStats = getPetalStats(petal);
+        const petalPosition = getPetalPosition(player, petalIndex, equipped.length, Date.now());
+        const hitKey = `${player.id}:${slot}`;
+        if (distanceBetween(petalPosition, mob) > PETAL_RADIUS + mob.collisionRadius
+          || mob.hitCooldowns.has(hitKey)) return;
+        mob.health = Math.max(0, mob.health - petalStats.damage);
+        player.petalHealth[slot] = Math.max(0, player.petalHealth[slot] - mob.damage);
+        if (player.petalHealth[slot] === 0) player.petalReloads[slot] = petalStats.reload;
+        mob.hitCooldowns.set(hitKey, PETAL_HIT_COOLDOWN);
+      });
+    });
+  });
+}
+
 webSocketServer.on('connection', (socket) => {
   const player = {
     id: randomUUID(),
@@ -416,7 +507,7 @@ webSocketServer.on('connection', (socket) => {
     started: false,
   };
   PETAL_RARITIES.forEach((rarity, index) => {
-    const petal = createPetal('basic', rarity.id);
+    const petal = createPetal(1, rarity.id);
     player.hotbar[index] = petal;
     player.petalHealth[index] = getPetalStats(petal).health;
     addToInventory(player, petal, 5);
@@ -519,10 +610,17 @@ setInterval(() => {
     activePlayers.push(player);
   });
   resolveCombat(activePlayers, deltaTime);
+  resolveMobCombat(activePlayers, deltaTime);
   const publicPlayers = [...players.values()]
     .filter(({ player }) => player.started)
     .map(({ player }) => publicPlayer(player));
-  if (publicPlayers.length) broadcast({ type: 'playersUpdated', players: publicPlayers });
+  if (publicPlayers.length) {
+    broadcast({
+      type: 'worldUpdated',
+      players: publicPlayers,
+      mobs: [...mobs.values()].map(publicMob),
+    });
+  }
 }, 1000 / TICK_RATE);
 
 server.listen(port, '0.0.0.0', () => {
