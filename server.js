@@ -169,6 +169,23 @@ function validBar(value) {
 }
 
 function applyAction(player, message) {
+  if (message.action === 'swapAllBars') {
+    for (let slot = 0; slot < 10; slot += 1) {
+      [player.hotbar[slot], player.secondaryHotbar[slot]] = [
+        player.secondaryHotbar[slot],
+        player.hotbar[slot],
+      ];
+      [player.petalHealth[slot], player.secondaryPetalHealth[slot]] = [
+        player.secondaryPetalHealth[slot],
+        player.petalHealth[slot],
+      ];
+      [player.petalReloads[slot], player.secondaryPetalReloads[slot]] = [
+        player.secondaryPetalReloads[slot],
+        player.petalReloads[slot],
+      ];
+    }
+  }
+
   if (message.action === 'swapBars') {
     const slot = Number(message.slot);
     if (!Number.isInteger(slot) || slot < 0 || slot > 9) return;
