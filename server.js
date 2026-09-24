@@ -1,11 +1,15 @@
 import http from 'node:http';
+import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
+import jpeg from 'jpeg-js';
 
 const port = Number(process.env.PORT) || 3000;
 const players = new Map();
 const mobs = new Map();
-const WORLD = { width: 3200, height: 3200, spawnX: 1600, spawnY: 1600, border: 260 };
+const WORLD = { width: 3200, height: 3200, spawnX: 1500, spawnY: 1600 };
+const MAP_WALKABLE_THRESHOLD = 180;
+const mapReference = jpeg.decode(fs.readFileSync(new URL('./assets/SampleMap.jpg', import.meta.url)));
 const PLAYER_RADIUS = 31;
 const PETAL_RADIUS = 21;
 const BASE_PLAYER_HEALTH = 100;
@@ -17,6 +21,25 @@ const TICK_RATE = 20;
 const PETAL_ROTATION_MS = 4200;
 const PETAL_HIT_COOLDOWN = 0.35;
 const BODY_HIT_COOLDOWN = 0.5;
+
+function isWalkablePoint(x, y) {
+  if (x < 0 || y < 0 || x > WORLD.width || y > WORLD.height) return false;
+  const mapX = Math.min(mapReference.width - 1, Math.floor(x / WORLD.width * mapReference.width));
+  const mapY = Math.min(mapReference.height - 1, Math.floor(y / WORLD.height * mapReference.height));
+  const offset = (mapY * mapReference.width + mapX) * 4;
+  const brightness = (mapReference.data[offset] + mapReference.data[offset + 1] + mapReference.data[offset + 2]) / 3;
+  return brightness > MAP_WALKABLE_THRESHOLD;
+}
+
+function isWalkablePosition(x, y, radius) {
+  const sampleCount = 12;
+  if (!isWalkablePoint(x, y)) return false;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const angle = index / sampleCount * Math.PI * 2;
+    if (!isWalkablePoint(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius)) return false;
+  }
+  return true;
+}
 const PETAL_RARITIES = [
   { id: 'common', label: 'Common', color: '#9ea4ad', multiplier: 1 },
   { id: 'unusual', label: 'Unusual', color: '#55c878', multiplier: 3 },
@@ -379,8 +402,8 @@ function updatePetalReloads(player, deltaTime) {
 }
 
 function respawnPlayer(player) {
-  player.x = WORLD.width / 2;
-  player.y = WORLD.height / 2;
+  player.x = WORLD.spawnX;
+  player.y = WORLD.spawnY;
   player.velocityX = 0;
   player.velocityY = 0;
   player.health = player.maxHealth;
@@ -603,10 +626,12 @@ setInterval(() => {
     const velocityStep = (player.input.x || player.input.y ? MOVEMENT_ACCELERATION : MOVEMENT_DECELERATION) * deltaTime;
     player.velocityX += Math.max(-velocityStep, Math.min(velocityStep, targetVelocityX - player.velocityX));
     player.velocityY += Math.max(-velocityStep, Math.min(velocityStep, targetVelocityY - player.velocityY));
-    player.x += player.velocityX * deltaTime;
-    player.y += player.velocityY * deltaTime;
-    player.x = Math.max(WORLD.border + PLAYER_RADIUS, Math.min(WORLD.width - WORLD.border - PLAYER_RADIUS, player.x));
-    player.y = Math.max(WORLD.border + PLAYER_RADIUS, Math.min(WORLD.height - WORLD.border - PLAYER_RADIUS, player.y));
+    const nextX = player.x + player.velocityX * deltaTime;
+    const nextY = player.y + player.velocityY * deltaTime;
+    if (isWalkablePosition(nextX, player.y, PLAYER_RADIUS)) player.x = nextX;
+    else player.velocityX = 0;
+    if (isWalkablePosition(player.x, nextY, PLAYER_RADIUS)) player.y = nextY;
+    else player.velocityY = 0;
     activePlayers.push(player);
   });
   resolveCombat(activePlayers, deltaTime);
