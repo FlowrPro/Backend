@@ -66,6 +66,11 @@ const MOB_TYPES = {
 };
 const rarityById = new Map(PETAL_RARITIES.map((rarity) => [rarity.id, rarity]));
 const mobRarityById = new Map(MOB_RARITIES.map((rarity) => [rarity.id, rarity]));
+const spawnBoxes = new Map();
+const SPAWNBOX_DEFAULT_CAP = 50;
+const SPAWNBOX_DEFAULT_ACTIVATION_DISTANCE = 2400;
+const SPAWNBOX_MIN_RESPAWN_DELAY = 5000;
+const SPAWNBOX_MAX_RESPAWN_DELAY = 60000;
 
 function getMobStats(mob) {
   const type = MOB_TYPES[mob.typeId];
@@ -79,7 +84,7 @@ function getMobStats(mob) {
   };
 }
 
-function createMob(id, typeId, rarityId, x, y) {
+function createMob(id, typeId, rarityId, x, y, spawnBoxId = null) {
   const stats = getMobStats({ typeId, rarityId });
   return {
     id,
@@ -93,7 +98,132 @@ function createMob(id, typeId, rarityId, x, y) {
     size: stats.size,
     collisionRadius: stats.size / 2,
     hitCooldowns: new Map(),
+    spawnBoxId,
   };
+}
+
+function createSpawnBox({
+  id,
+  x,
+  y,
+  width,
+  height,
+  spawnTable,
+  maxMobs = SPAWNBOX_DEFAULT_CAP,
+  activationDistance = SPAWNBOX_DEFAULT_ACTIVATION_DISTANCE,
+  respawnDelayMin = SPAWNBOX_MIN_RESPAWN_DELAY,
+  respawnDelayMax = SPAWNBOX_MAX_RESPAWN_DELAY,
+}) {
+  if (!id || spawnBoxes.has(id)) throw new Error(`Spawnbox id must be unique: ${id}`);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    throw new Error(`Spawnbox ${id} must have a positive rectangular area.`);
+  }
+  if (!Array.isArray(spawnTable) || !spawnTable.length) {
+    throw new Error(`Spawnbox ${id} needs at least one spawn table entry.`);
+  }
+  const entries = spawnTable
+    .map((entry) => ({
+      typeId: Number(entry.typeId),
+      rarityId: entry.rarityId,
+      weight: Number(entry.weight),
+    }))
+    .filter((entry) => MOB_TYPES[entry.typeId] && mobRarityById.has(entry.rarityId) && entry.weight > 0);
+  if (!entries.length) throw new Error(`Spawnbox ${id} has no valid spawn table entries.`);
+  const minDelay = Math.min(SPAWNBOX_MAX_RESPAWN_DELAY, Math.max(SPAWNBOX_MIN_RESPAWN_DELAY, respawnDelayMin));
+  const box = {
+    id,
+    x,
+    y,
+    width,
+    height,
+    maxMobs: Math.min(SPAWNBOX_DEFAULT_CAP, Math.max(1, Math.floor(maxMobs))),
+    activationDistance: Math.max(0, activationDistance),
+    respawnDelayMin: minDelay,
+    respawnDelayMax: Math.min(SPAWNBOX_MAX_RESPAWN_DELAY, Math.max(minDelay, respawnDelayMax)),
+    spawnTable: entries,
+    mobIds: new Set(),
+    nextSpawnAt: null,
+  };
+  spawnBoxes.set(id, box);
+  return box;
+}
+
+function randomSpawnBoxDelay(box) {
+  return box.respawnDelayMin + Math.random() * (box.respawnDelayMax - box.respawnDelayMin);
+}
+
+function isPlayerNearSpawnBox(box) {
+  return [...players.values()].some(({ player }) => {
+    if (!player.started || player.health <= 0) return false;
+    const closestX = Math.max(box.x, Math.min(player.x, box.x + box.width));
+    const closestY = Math.max(box.y, Math.min(player.y, box.y + box.height));
+    return Math.hypot(player.x - closestX, player.y - closestY) <= box.activationDistance;
+  });
+}
+
+function chooseSpawnBoxEntry(box) {
+  const totalWeight = box.spawnTable.reduce((total, entry) => total + entry.weight, 0);
+  let selection = Math.random() * totalWeight;
+  for (const entry of box.spawnTable) {
+    selection -= entry.weight;
+    if (selection <= 0) return entry;
+  }
+  return box.spawnTable[box.spawnTable.length - 1];
+}
+
+function getSpawnBoxSpawnPosition(box, collisionRadius) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const x = box.x + Math.random() * box.width;
+    const y = box.y + Math.random() * box.height;
+    if (isWalkablePosition(x, y, collisionRadius)) return { x, y };
+  }
+  return null;
+}
+
+function getLiveSpawnBoxMobCount(box) {
+  let count = 0;
+  box.mobIds.forEach((mobId) => {
+    const mob = mobs.get(mobId);
+    if (mob?.health > 0) count += 1;
+  });
+  return count;
+}
+
+function spawnMobFromSpawnBox(box) {
+  if (getLiveSpawnBoxMobCount(box) >= box.maxMobs) return null;
+  const entry = chooseSpawnBoxEntry(box);
+  const stats = getMobStats(entry);
+  const position = getSpawnBoxSpawnPosition(box, stats.size / 2);
+  if (!position) return null;
+  const mobId = `${box.id}-${randomUUID()}`;
+  const mob = createMob(mobId, entry.typeId, entry.rarityId, position.x, position.y, box.id);
+  mobs.set(mobId, mob);
+  box.mobIds.add(mobId);
+  return mob;
+}
+
+function updateSpawnBoxes(now = Date.now()) {
+  spawnBoxes.forEach((box) => {
+    box.mobIds.forEach((mobId) => {
+      const mob = mobs.get(mobId);
+      if (!mob || mob.health <= 0) {
+        mobs.delete(mobId);
+        box.mobIds.delete(mobId);
+      }
+    });
+    if (!isPlayerNearSpawnBox(box)) {
+      box.nextSpawnAt = null;
+      return;
+    }
+    if (getLiveSpawnBoxMobCount(box) >= box.maxMobs) {
+      box.nextSpawnAt = null;
+      return;
+    }
+    if (box.nextSpawnAt === null) box.nextSpawnAt = now + randomSpawnBoxDelay(box);
+    if (now < box.nextSpawnAt) return;
+    spawnMobFromSpawnBox(box);
+    box.nextSpawnAt = now + randomSpawnBoxDelay(box);
+  });
 }
 
 const server = http.createServer((request, response) => {
@@ -632,6 +762,7 @@ setInterval(() => {
     else player.velocityY = 0;
     activePlayers.push(player);
   });
+  updateSpawnBoxes();
   resolveCombat(activePlayers, deltaTime);
   resolveMobCombat(activePlayers, deltaTime);
   const publicPlayers = [...players.values()]
