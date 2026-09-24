@@ -503,8 +503,8 @@ webSocketServer.on('connection', (socket) => {
   const player = {
     id: randomUUID(),
     username: 'Guest',
-    x: 1600,
-    y: 1600,
+    x: WORLD.spawnX,
+    y: WORLD.spawnY,
     health: BASE_PLAYER_HEALTH,
     maxHealth: BASE_PLAYER_HEALTH,
     bodyDamage: BASE_BODY_DAMAGE,
