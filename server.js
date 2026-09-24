@@ -7,7 +7,7 @@ import jpeg from 'jpeg-js';
 const port = Number(process.env.PORT) || 3000;
 const players = new Map();
 const mobs = new Map();
-const WORLD = { width: 64000, height: 32000, spawnX: 29400, spawnY: 5667 };
+const WORLD = { width: 64000, height: 32000, spawnX: 17306, spawnY: 5224 };
 const MAP_WALKABLE_THRESHOLD = 180;
 const mapReference = jpeg.decode(fs.readFileSync(new URL('./assets/SampleMap.jpg', import.meta.url)));
 const PLAYER_RADIUS = 31;
