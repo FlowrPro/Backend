@@ -67,7 +67,8 @@ const MOB_TYPES = {
 const rarityById = new Map(PETAL_RARITIES.map((rarity) => [rarity.id, rarity]));
 const mobRarityById = new Map(MOB_RARITIES.map((rarity) => [rarity.id, rarity]));
 const spawnBoxes = new Map();
-const SPAWNBOX_DEFAULT_CAP = 50;
+const SPAWNBOX_DEFAULT_CAP = 30;
+const SPAWNBOX_MAX_CAP = 50;
 const SPAWNBOX_DEFAULT_ACTIVATION_DISTANCE = 2400;
 const SPAWNBOX_MIN_RESPAWN_DELAY = 5000;
 const SPAWNBOX_MAX_RESPAWN_DELAY = 60000;
@@ -136,7 +137,7 @@ function createSpawnBox({
     y,
     width,
     height,
-    maxMobs: Math.min(SPAWNBOX_DEFAULT_CAP, Math.max(1, Math.floor(maxMobs))),
+    maxMobs: Math.min(SPAWNBOX_MAX_CAP, Math.max(1, Math.floor(maxMobs))),
     activationDistance: Math.max(0, activationDistance),
     respawnDelayMin: minDelay,
     respawnDelayMax: Math.min(SPAWNBOX_MAX_RESPAWN_DELAY, Math.max(minDelay, respawnDelayMax)),
@@ -172,10 +173,13 @@ function chooseSpawnBoxEntry(box) {
 }
 
 function getSpawnBoxSpawnPosition(box, collisionRadius) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     const x = box.x + Math.random() * box.width;
     const y = box.y + Math.random() * box.height;
-    if (isWalkablePosition(x, y, collisionRadius)) return { x, y };
+    if (!isWalkablePosition(x, y, collisionRadius)) continue;
+    const overlapsMob = [...mobs.values()].some((mob) => mob.health > 0
+      && Math.hypot(mob.x - x, mob.y - y) < mob.collisionRadius + collisionRadius + 8);
+    if (!overlapsMob) return { x, y };
   }
   return null;
 }
@@ -225,6 +229,110 @@ function updateSpawnBoxes(now = Date.now()) {
     box.nextSpawnAt = now + randomSpawnBoxDelay(box);
   });
 }
+
+function resolveMobCollisions() {
+  const liveMobs = [...mobs.values()].filter((mob) => mob.health > 0);
+  for (let firstIndex = 0; firstIndex < liveMobs.length; firstIndex += 1) {
+    const first = liveMobs[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < liveMobs.length; secondIndex += 1) {
+      const second = liveMobs[secondIndex];
+      const minimumDistance = first.collisionRadius + second.collisionRadius + 8;
+      const deltaX = second.x - first.x;
+      const deltaY = second.y - first.y;
+      const distance = Math.hypot(deltaX, deltaY);
+      if (distance >= minimumDistance) continue;
+      const safeDistance = distance || 1;
+      const pushDistance = (minimumDistance - safeDistance) / 2;
+      const directionX = distance ? deltaX / distance : 1;
+      const directionY = distance ? deltaY / distance : 0;
+      const firstX = first.x - directionX * pushDistance;
+      const firstY = first.y - directionY * pushDistance;
+      const secondX = second.x + directionX * pushDistance;
+      const secondY = second.y + directionY * pushDistance;
+      if (isWalkablePosition(firstX, firstY, first.collisionRadius)) {
+        first.x = firstX;
+        first.y = firstY;
+      }
+      if (isWalkablePosition(secondX, secondY, second.collisionRadius)) {
+        second.x = secondX;
+        second.y = secondY;
+      }
+    }
+  }
+}
+
+function referenceSpawnBox([left, top, right, bottom]) {
+  return {
+    x: left / 1152 * WORLD.width,
+    y: top / 648 * WORLD.height,
+    width: (right - left) / 1152 * WORLD.width,
+    height: (bottom - top) / 648 * WORLD.height,
+  };
+}
+
+const SPAWNBOX_RARITIES = {
+  common: [{ rarityId: 'common', weight: 100 }],
+  commonUnusual: [{ rarityId: 'common', weight: 60 }, { rarityId: 'unusual', weight: 40 }],
+  unusual: [{ rarityId: 'unusual', weight: 100 }],
+  unusualRare: [{ rarityId: 'unusual', weight: 50 }, { rarityId: 'rare', weight: 50 }],
+  unusualRareBiased: [{ rarityId: 'unusual', weight: 30 }, { rarityId: 'rare', weight: 60 }],
+  rare: [{ rarityId: 'rare', weight: 100 }],
+  rareEpic: [{ rarityId: 'rare', weight: 40 }, { rarityId: 'epic', weight: 60 }],
+  epic: [{ rarityId: 'epic', weight: 100 }],
+  rareEpicBiased: [{ rarityId: 'rare', weight: 10 }, { rarityId: 'epic', weight: 90 }],
+  epicLegendary: [{ rarityId: 'epic', weight: 20 }, { rarityId: 'legendary', weight: 80 }],
+  legendaryEpic: [{ rarityId: 'legendary', weight: 80 }, { rarityId: 'epic', weight: 20 }],
+  legendary: [{ rarityId: 'legendary', weight: 100 }],
+  legendaryMythical: [{ rarityId: 'legendary', weight: 90 }, { rarityId: 'mythical', weight: 10 }],
+  legendaryMythicalUltra: [
+    { rarityId: 'legendary', weight: 90 },
+    { rarityId: 'mythical', weight: 9 },
+    { rarityId: 'ultra', weight: 1 },
+  ],
+  mythical: [{ rarityId: 'mythical', weight: 100 }],
+  mythicalUltra: [{ rarityId: 'mythical', weight: 50 }, { rarityId: 'ultra', weight: 50 }],
+  mythicalUltraBiased: [{ rarityId: 'mythical', weight: 99 }, { rarityId: 'ultra', weight: 1 }],
+  ultra: [{ rarityId: 'ultra', weight: 100 }],
+  commonMythical: [{ rarityId: 'common', weight: 50 }, { rarityId: 'mythical', weight: 50 }],
+};
+
+const SPAWNBOX_REGIONS = [
+  [174, 6, 244, 27], [250, 18, 278, 151], [345, 4, 458, 24], [453, 33, 479, 152],
+  [333, 25, 360, 84], [335, 92, 397, 119], [734, 7, 763, 200], [930, 7, 949, 160],
+  [950, 7, 969, 316], [622, 91, 713, 116], [334, 284, 421, 312], [853, 32, 885, 180],
+  [535, 258, 560, 388], [739, 218, 841, 250], [261, 158, 350, 182], [351, 158, 459, 182],
+  [172, 185, 195, 300], [901, 414, 942, 439], [458, 483, 542, 504], [293, 392, 320, 490],
+  [293, 493, 320, 591], [369, 396, 403, 490], [369, 493, 403, 588], [169, 398, 201, 598],
+  [855, 550, 885, 613], [930, 160, 969, 316], [739, 218, 790, 250], [790, 218, 841, 250],
+];
+
+const SPAWNBOX_CAP_OVERRIDES = new Map([
+  [1, 15],
+  [22, 10],
+  [26, 15],
+]);
+
+const SPAWNBOX_CONFIGS = [
+  ['common'], ['commonUnusual'], ['unusual'], ['unusual'], ['unusualRare'], ['unusualRareBiased'],
+  ['rare'], ['rareEpic'], ['epic'], ['rareEpicBiased'], ['epicLegendary'], ['epic'],
+  ['legendaryEpic'], ['legendaryMythical'], ['legendary'], ['commonMythical'], ['legendaryMythical'],
+  ['legendaryMythicalUltra'], ['mythical'], ['mythicalUltra'], null, ['ultra'], ['mythical'],
+  ['mythicalUltraBiased'], ['ultra'], ['ultra'], ['mythical'], ['mythical'], ['ultra'],
+];
+
+SPAWNBOX_CONFIGS.forEach((rarityTable, index) => {
+  if (!rarityTable) return;
+  const region = SPAWNBOX_REGIONS[index];
+  if (!region) return;
+  const spawnTable = SPAWNBOX_RARITIES[rarityTable[0]].map((entry) => ({ typeId: 1, ...entry }));
+  const boxNumber = index + 1;
+  createSpawnBox({
+    id: `box-${boxNumber}`,
+    ...referenceSpawnBox(region),
+    spawnTable,
+    maxMobs: SPAWNBOX_CAP_OVERRIDES.get(boxNumber) ?? SPAWNBOX_DEFAULT_CAP,
+  });
+});
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
