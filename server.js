@@ -96,8 +96,6 @@ function createMob(id, typeId, rarityId, x, y) {
   };
 }
 
-mobs.set('rock-legendary-1', createMob(1, 1, 'legendary', WORLD.spawnX + 300, WORLD.spawnY));
-
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
     response.writeHead(200, { 'Content-Type': 'application/json' });
